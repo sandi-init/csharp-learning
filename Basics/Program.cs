@@ -1,500 +1,355 @@
 // ============================================================
-// LESSON 9: Async/Await & Tasks — Deep Dive
+// LESSON 9B: State Machines, Context & Thread Switching
 // ============================================================
 
 // ============================================
-// PART 1: Synchronous vs Asynchronous
+// PART 1: See the State Machine with Your Own Eyes
 // ============================================
+Console.WriteLine("=== PART 1: Watching the State Machine ===\n");
 
-// First, let's see the SYNCHRONOUS (blocking) way
-using System.Text.Json;
-Console.WriteLine("=== SYNCHRONOUS EXAMPLE ===\n");
-
-void MakeBreakfastSync()
+// This method has 3 awaits = 4 states (0, 1, 2, 3)
+async Task<int> ThreeStepWorkAsync()
 {
-    Console.WriteLine("Starting breakfast...");
-    var sw = System.Diagnostics.Stopwatch.StartNew();
+    Console.WriteLine($"  State 0: Starting          | Thread {Environment.CurrentManagedThreadId}");
 
-    // Each step BLOCKS until done — like one waiter doing everything sequentially
-    BoilWaterSync();
-    ToastBreadSync();
-    FryEggSync();
-
-    sw.Stop();
-    Console.WriteLine($"\nBreakfast ready! Took {sw.ElapsedMilliseconds}ms");
-    Console.WriteLine("(Notice: ~3 seconds because each step waited for the previous one)\n");
-}
-
-void BoilWaterSync()
-{
-    Console.WriteLine("  Boiling water...");
-    Thread.Sleep(1000); // Simulates waiting — thread is BLOCKED, doing nothing
-    Console.WriteLine("  Water boiled!");
-}
-
-void ToastBreadSync()
-{
-    Console.WriteLine("  Toasting bread...");
-    Thread.Sleep(1000);
-    Console.WriteLine("  Bread toasted!");
-}
-
-void FryEggSync()
-{
-    Console.WriteLine("  Frying egg...");
-    Thread.Sleep(1000);
-    Console.WriteLine("  Egg fried!");
-}
-
-MakeBreakfastSync();
-
-// Now the ASYNCHRONOUS way
-Console.WriteLine("=== ASYNCHRONOUS EXAMPLE ===\n");
-
-async Task MakeBreakfastAsync()
-{
-    Console.WriteLine("Starting breakfast...");
-    var sw = System.Diagnostics.Stopwatch.StartNew();
-
-    // Start ALL tasks at once — like telling 3 appliances to go
-    Task waterTask = BoilWaterAsync();
-    Task toastTask = ToastBreadAsync();
-    Task eggTask = FryEggAsync();
-
-    // Now wait for ALL of them to finish
-    await Task.WhenAll(waterTask, toastTask, eggTask);
-
-    sw.Stop();
-    Console.WriteLine($"\nBreakfast ready! Took {sw.ElapsedMilliseconds}ms");
-    Console.WriteLine("(Notice: ~1 second because all 3 ran in parallel!)\n");
-}
-
-async Task BoilWaterAsync()
-{
-    Console.WriteLine("  Boiling water...");
-    await Task.Delay(1000); // Non-blocking! Thread is FREE to do other work
-    Console.WriteLine("  Water boiled!");
-}
-
-async Task ToastBreadAsync()
-{
-    Console.WriteLine("  Toasting bread...");
-    await Task.Delay(1000);
-    Console.WriteLine("  Bread toasted!");
-}
-
-async Task FryEggAsync()
-{
-    Console.WriteLine("  Frying egg...");
-    await Task.Delay(1000);
-    Console.WriteLine("  Egg fried!");
-}
-
-await MakeBreakfastAsync();
-
-
-// ============================================
-// PART 2: Task and Task<T> — What They Are
-// ============================================
-Console.WriteLine("=== PART 2: Task and Task<T> ===\n");
-
-// Task = a promise that some work will complete (returns nothing)
-// Task<T> = a promise that some work will complete AND return a value of type T
-// Think of it like: Task is void, Task<T> is a return type
-
-async Task<string> FetchUserNameAsync(int userId)
-{
-    Console.WriteLine($"  Fetching user {userId}...");
-    await Task.Delay(500); // Simulate API call
-    return userId switch
-    {
-        1 => "Santhosh",
-        2 => "Aki",
-        3 => "Claude",
-        _ => "Unknown"
-    };
-}
-
-async Task<int> FetchUserAgeAsync(int userId)
-{
-    Console.WriteLine($"  Fetching age for user {userId}...");
-    await Task.Delay(300);
-    return userId switch
-    {
-        1 => 28,
-        2 => 35,
-        3 => 2,
-        _ => 0
-    };
-}
-
-// You can await to get the VALUE out of a Task<T>
-string name = await FetchUserNameAsync(1);
-int age = await FetchUserAgeAsync(1);
-Console.WriteLine($"  Result: {name}, age {age}\n");
-
-// Or run them in parallel and await both
-Console.WriteLine("  Fetching name and age in parallel...");
-Task<string> nameTask = FetchUserNameAsync(2);  // Starts immediately
-Task<int> ageTask = FetchUserAgeAsync(2);        // Also starts immediately
-
-// await both — total time = max(500ms, 300ms) = 500ms, not 800ms
-await Task.WhenAll(nameTask, ageTask);
-Console.WriteLine($"  Result: {nameTask.Result}, age {ageTask.Result}\n");
-
-
-// ============================================
-// PART 3: The Rules of Async/Await
-// ============================================
-Console.WriteLine("=== PART 3: The Rules ===\n");
-
-// RULE 1: "async" goes on the method signature
-// RULE 2: "await" goes before ANY async call you want to wait for
-// RULE 3: An async method MUST return Task, Task<T>, or void (avoid void!)
-// RULE 4: You can only use "await" inside an "async" method
-
-// WHY avoid async void? Because you can't:
-// - await it
-// - catch its exceptions
-// - know when it's done
-// The ONLY valid use of async void is event handlers (WPF/WinForms buttons)
-
-// BAD — Don't do this:
-// async void DoSomethingBad() { await Task.Delay(100); }
-
-// GOOD — Do this:
-async Task DoSomethingGood()
-{
     await Task.Delay(100);
-    Console.WriteLine("  This is properly awaitable!");
-}
-await DoSomethingGood();
+    Console.WriteLine($"  State 1: After 1st await   | Thread {Environment.CurrentManagedThreadId}");
 
-// RULE 5: If you don't await a Task, it runs as "fire and forget"
-// This is DANGEROUS because exceptions are silently swallowed
-Console.WriteLine("  Rules understood!\n");
-
-
-// ============================================
-// PART 4: Real Patterns You'll Use
-// ============================================
-Console.WriteLine("=== PART 4: Real-World Patterns ===\n");
-
-// --- Pattern 1: Sequential async (when order matters) ---
-Console.WriteLine("--- Pattern 1: Sequential async ---");
-async Task ProcessOrderAsync()
-{
-    string user = await FetchUserNameAsync(1);  // Must get user first
-    Console.WriteLine($"  Processing order for {user}");
-    await Task.Delay(200);                       // Then process
-    Console.WriteLine("  Order processed!");
-}
-await ProcessOrderAsync();
-
-// --- Pattern 2: Parallel async (when independent) ---
-Console.WriteLine("\n--- Pattern 2: Parallel async ---");
-async Task FetchAllUsersAsync()
-{
-    // Start all fetches at once
-    var tasks = new List<Task<string>>
-    {
-        FetchUserNameAsync(1),
-        FetchUserNameAsync(2),
-        FetchUserNameAsync(3)
-    };
-
-    string[] names = await Task.WhenAll(tasks);
-    Console.WriteLine($"  All users: {string.Join(", ", names)}");
-}
-await FetchAllUsersAsync();
-
-// --- Pattern 3: WhenAny (first one wins) ---
-Console.WriteLine("\n--- Pattern 3: WhenAny (race condition) ---");
-async Task<string> FastServerAsync()
-{
     await Task.Delay(100);
-    return "Fast server responded!";
+    Console.WriteLine($"  State 2: After 2nd await   | Thread {Environment.CurrentManagedThreadId}");
+
+    await Task.Delay(100);
+    Console.WriteLine($"  State 3: After 3rd await   | Thread {Environment.CurrentManagedThreadId}");
+
+    return 42;
 }
 
-async Task<string> SlowServerAsync()
-{
-    await Task.Delay(2000);
-    return "Slow server responded!";
-}
+await ThreeStepWorkAsync();
+Console.WriteLine();
 
-Task<string> fast = FastServerAsync();
-Task<string> slow = SlowServerAsync();
-Task<string> winner = await Task.WhenAny(fast, slow);
-Console.WriteLine($"  Winner: {await winner}");  // Fast server wins!
-
-// --- Pattern 4: Timeout pattern ---
-Console.WriteLine("\n--- Pattern 4: Timeout ---");
-async Task<string> SlowOperationAsync()
-{
-    await Task.Delay(5000); // Takes 5 seconds
-    return "Done!";
-}
-
-async Task<string> WithTimeoutAsync(Task<string> operation, int timeoutMs)
-{
-    Task timeoutTask = Task.Delay(timeoutMs);
-    Task completedTask = await Task.WhenAny(operation, timeoutTask);
-
-    if (completedTask == timeoutTask)
-        throw new TimeoutException($"Operation timed out after {timeoutMs}ms");
-
-    return await (Task<string>)completedTask;
-}
-
-try
-{
-    string result = await WithTimeoutAsync(SlowOperationAsync(), 1000);
-    Console.WriteLine($"  {result}");
-}
-catch (TimeoutException ex)
-{
-    Console.WriteLine($"  Caught: {ex.Message}");
-}
-
-
-// ============================================
-// PART 5: CancellationToken — Graceful Shutdown
-// ============================================
-Console.WriteLine("\n=== PART 5: CancellationToken ===\n");
-
-// In plugins, you NEED this. When the user closes the app or switches profiles,
-// your plugin must stop its async work cleanly — not leave zombie tasks running.
-
-async Task LongRunningPluginWorkAsync(CancellationToken cancellationToken)
-{
-    for (int i = 1; i <= 10; i++)
-    {
-        // Check if cancellation was requested
-        cancellationToken.ThrowIfCancellationRequested();
-
-        Console.WriteLine($"  Processing item {i}/10...");
-        await Task.Delay(200, cancellationToken); // Also accepts token!
-    }
-    Console.WriteLine("  All items processed!");
-}
-
-// Create a token source — the thing that triggers cancellation
-using var cts = new CancellationTokenSource();
-
-// Cancel after 500ms (simulating user closing the app)
-cts.CancelAfter(500);
-
-try
-{
-    await LongRunningPluginWorkAsync(cts.Token);
-}
-catch (OperationCanceledException)
-{
-    Console.WriteLine("  Work was cancelled gracefully! (This is expected)\n");
-}
-
-
-// ============================================
-// PART 6: Under the Hood — State Machine
-// ============================================
-Console.WriteLine("=== PART 6: What 'await' Actually Does ===\n");
-
-// When the compiler sees "async/await", it rewrites your method into a STATE MACHINE.
+// What the compiler generated (you can verify with ILDASM):
 //
-// Your code:
-//   async Task DoWork()
+// class ThreeStepWorkAsync_StateMachine : IAsyncStateMachine
+// {
+//     public int _state;                    // which await are we at?
+//     public AsyncTaskMethodBuilder<int> _builder;  // manages the Task<int>
+//     private TaskAwaiter _awaiter;          // the thing we're waiting on
+//
+//     void MoveNext()
+//     {
+//         switch (_state)
+//         {
+//             case 0:
+//                 Console.WriteLine("State 0: Starting");
+//                 _awaiter = Task.Delay(100).GetAwaiter();
+//                 if (!_awaiter.IsCompleted)
+//                 {
+//                     _state = 1;
+//                     _builder.AwaitUnsafeOnCompleted(ref _awaiter, ref this);
+//                     return;  // ← THREAD IS FREE. Method is "paused" on heap.
+//                 }
+//                 goto case 1;
+//
+//             case 1:
+//                 _awaiter.GetResult();  // check for exceptions
+//                 Console.WriteLine("State 1: After 1st await");
+//                 _awaiter = Task.Delay(100).GetAwaiter();
+//                 if (!_awaiter.IsCompleted)
+//                 {
+//                     _state = 2;
+//                     _builder.AwaitUnsafeOnCompleted(ref _awaiter, ref this);
+//                     return;  // ← THREAD IS FREE again
+//                 }
+//                 goto case 2;
+//
+//             case 2:  ... same pattern ...
+//             case 3:
+//                 _builder.SetResult(42);  // Task<int> completes with value 42
+//                 break;
+//         }
+//     }
+// }
+
+
+// ============================================
+// PART 2: Local Variables Become Fields
+// ============================================
+Console.WriteLine("=== PART 2: How Local Variables Survive Across Awaits ===\n");
+
+async Task LocalVariableSurvivalAsync()
+{
+    // These local variables are on the STACK... normally.
+    // But with async, the compiler LIFTS them into fields on the state machine class.
+    int counter = 0;
+    string label = "progress";
+
+    Console.WriteLine($"  Before await: counter={counter}, label={label}");
+    Console.WriteLine($"  (These are now FIELDS on the heap, not stack variables)\n");
+
+    for (int i = 1; i <= 3; i++)
+    {
+        await Task.Delay(50);
+        counter += 10;
+        // After each await, we might be on a different thread
+        // But counter and label SURVIVE because they're on the heap
+        Console.WriteLine($"  After await #{i}: counter={counter}, label={label} | Thread {Environment.CurrentManagedThreadId}");
+    }
+
+    Console.WriteLine($"\n  Final: counter={counter}");
+    Console.WriteLine("  The variable survived 3 thread switches because it's a FIELD, not a stack variable.\n");
+}
+
+// Compiler transforms the above into roughly:
+//
+// class LocalVariableSurvival_StateMachine
+// {
+//     public int counter;     // ← was a local variable, now a field
+//     public string label;    // ← was a local variable, now a field
+//     public int i;           // ← even the loop variable!
+//     public int _state;
+//     ...
+// }
+//
+// Stack (dies with thread) → Heap (lives independently of any thread)
+
+await LocalVariableSurvivalAsync();
+
+
+// ============================================
+// PART 3: What DOESN'T Survive — Thread State
+// ============================================
+Console.WriteLine("=== PART 3: What Gets Lost Across Awaits ===\n");
+
+// Thread-local storage does NOT survive because you might be on a different thread
+
+// ThreadLocal<T> = each thread has its own copy
+ThreadLocal<string?> threadLocalValue = new ThreadLocal<string?>();
+
+async Task ThreadStateLossAsync()
+{
+    threadLocalValue.Value = "I was set on this thread";
+    Console.WriteLine($"  Before await: threadLocalValue = \"{threadLocalValue.Value}\"");
+    Console.WriteLine($"  Set on Thread {Environment.CurrentManagedThreadId}");
+
+    await Task.Delay(200);
+
+    // After await, we might be on a DIFFERENT thread
+    // That thread has its OWN copy of threadLocalValue (which is null!)
+    Console.WriteLine($"  After await:  threadLocalValue = \"{threadLocalValue.Value ?? "NULL — LOST!"}\"");
+    Console.WriteLine($"  Now on Thread {Environment.CurrentManagedThreadId}");
+    Console.WriteLine("  The value was lost because ThreadLocal is per-thread, and we switched threads!\n");
+}
+
+await ThreadStateLossAsync();
+
+// What survives vs what's lost:
+Console.WriteLine("  ┌─────────────────────┬──────────────────┐");
+Console.WriteLine("  │ SURVIVES (heap)      │ LOST (thread)   │");
+Console.WriteLine("  ├─────────────────────┼──────────────────┤");
+Console.WriteLine("  │ Local variables      │ [ThreadStatic]  │");
+Console.WriteLine("  │ Method parameters    │ Thread.Name     │");
+Console.WriteLine("  │ Loop counters        │ Thread-local    │");
+Console.WriteLine("  │ Captured closures    │   storage       │");
+Console.WriteLine("  │ The Task itself      │ Stack frames    │");
+Console.WriteLine("  │ Exception info       │ Thread identity │");
+Console.WriteLine("  └─────────────────────┴──────────────────┘\n");
+
+
+// ============================================
+// PART 4: SynchronizationContext in Action
+// ============================================
+Console.WriteLine("=== PART 4: SynchronizationContext Demo ===\n");
+
+// Console apps have NO SynchronizationContext — let's verify
+Console.WriteLine($"  Current SynchronizationContext: {SynchronizationContext.Current?.GetType().Name ?? "null"}\n");
+
+// Let's CREATE a custom one to see how it works
+// This simulates what WPF/WinForms/Options+ does internally
+
+// In a real UI app (WPF/Options+), the framework provides a SynchronizationContext.
+// We'll simulate one using a simple wrapper that logs when Post is called.
+var targetThreadId = Environment.CurrentManagedThreadId;
+var customContext = new CustomSyncContext(targetThreadId);
+
+// Show behavior WITHOUT SynchronizationContext (default for console)
+Console.WriteLine("  --- Without SynchronizationContext ---");
+async Task NoContextAsync()
+{
+    Console.WriteLine($"  Before await: Thread {Environment.CurrentManagedThreadId}");
+    await Task.Delay(100);
+    Console.WriteLine($"  After await:  Thread {Environment.CurrentManagedThreadId} (any thread pool thread)");
+}
+await NoContextAsync();
+
+Console.WriteLine();
+
+// Show behavior WITH SynchronizationContext
+Console.WriteLine("  --- With SynchronizationContext ---");
+var previousContext = SynchronizationContext.Current;
+SynchronizationContext.SetSynchronizationContext(customContext);
+
+async Task WithContextAsync()
+{
+    Console.WriteLine($"  Before await: Thread {Environment.CurrentManagedThreadId}");
+    await Task.Delay(100);
+    // The SyncContext's Post method gets called to schedule the continuation
+    Console.WriteLine($"  After await:  Thread {Environment.CurrentManagedThreadId} (SyncContext tried to marshal back)");
+}
+await WithContextAsync();
+await Task.Delay(200); // Give time for Post to execute
+
+// Restore
+SynchronizationContext.SetSynchronizationContext(previousContext);
+Console.WriteLine();
+
+
+// ============================================
+// PART 5: ConfigureAwait — Opting Out of Context
+// ============================================
+Console.WriteLine("=== PART 5: ConfigureAwait(false) — Skip the Context ===\n");
+
+SynchronizationContext.SetSynchronizationContext(customContext);
+
+async Task WithConfigureAwaitFalseAsync()
+{
+    Console.WriteLine($"  Before: Thread {Environment.CurrentManagedThreadId}");
+
+    // ConfigureAwait(true) — DEFAULT: uses SyncContext to resume
+    await Task.Delay(100).ConfigureAwait(true);
+    Console.WriteLine($"  After ConfigureAwait(true):  Thread {Environment.CurrentManagedThreadId} (context used)");
+
+    // ConfigureAwait(false) — SKIP: resume on any thread pool thread
+    await Task.Delay(100).ConfigureAwait(false);
+    Console.WriteLine($"  After ConfigureAwait(false): Thread {Environment.CurrentManagedThreadId} (context skipped)");
+}
+
+await WithConfigureAwaitFalseAsync();
+await Task.Delay(200);
+
+SynchronizationContext.SetSynchronizationContext(previousContext);
+
+Console.WriteLine(@"
+  When to use ConfigureAwait(false):
+  ┌──────────────────────────────────────────────────────────────┐
+  │ YOUR PLUGIN CODE:                                            │
+  │                                                              │
+  │ async Task HandleDialTurnAsync()     // UI event handler     │
+  │ {                                                            │
+  │     // Internal work — doesn't touch UI                      │
+  │     var data = await FetchDataAsync()                        │
+  │                     .ConfigureAwait(false);  // ← skip UI    │
+  │                                                              │
+  │     var result = await ProcessAsync(data)                    │
+  │                       .ConfigureAwait(false); // ← skip UI   │
+  │                                                              │
+  │     // Update UI — NEED the context here, so DON'T skip      │
+  │     UpdateLabel(result);  // must be on UI thread            │
+  │ }                                                            │
+  │                                                              │
+  │ RULE: Use ConfigureAwait(false) everywhere EXCEPT where      │
+  │       you directly touch UI elements.                        │
+  └──────────────────────────────────────────────────────────────┘
+");
+
+
+// ============================================
+// PART 6: Deadlock Demo — Why .Result is Dangerous
+// ============================================
+Console.WriteLine("=== PART 6: The Classic Deadlock (Explained) ===\n");
+
+// We can't safely DEMO a deadlock (it would hang forever), so let's trace it:
+//
+// SCENARIO: UI app (WPF/Options+) with SynchronizationContext
+//
+//   async Task<string> GetDataAsync()
 //   {
-//       Console.WriteLine("Before");
-//       await Task.Delay(1000);
-//       Console.WriteLine("After");
+//       await Task.Delay(100);  // needs to resume on UI thread (SyncContext)
+//       return "data";
 //   }
 //
-// Compiler turns it into roughly:
-//   class DoWork_StateMachine
+//   void ButtonClick()  // runs on UI thread
 //   {
-//       int state = 0;
-//       void MoveNext()
-//       {
-//           switch (state)
-//           {
-//               case 0:
-//                   Console.WriteLine("Before");
-//                   state = 1;
-//                   // Schedule Task.Delay, RETURN the thread to the pool
-//                   break;
-//               case 1:
-//                   // Task.Delay completed, we resume here
-//                   Console.WriteLine("After");
-//                   break;
-//           }
-//       }
+//       string result = GetDataAsync().Result;  // ← BLOCKS UI THREAD
 //   }
 //
-// KEY INSIGHT: The thread is NOT blocked. It's returned to the thread pool.
-// When the I/O completes, a (possibly different) thread picks up where you left off.
+// DEADLOCK TIMELINE:
 //
-// This is why async scales: 1000 concurrent HTTP requests don't need 1000 threads.
-// They need maybe 4-8 threads taking turns.
+//   1. ButtonClick() runs on UI Thread
+//   2. Calls GetDataAsync() — starts the async work
+//   3. .Result BLOCKS the UI thread — it's now sitting, waiting
+//   4. Task.Delay(100) completes
+//   5. State machine wants to resume...
+//   6. SyncContext says "resume on UI thread"
+//   7. But UI thread is BLOCKED by .Result at step 3!
+//   8. DEADLOCK — UI thread waits for Task, Task waits for UI thread
+//
+//   ┌──────────────────────────────────────────┐
+//   │  UI Thread                               │
+//   │  ┌──────────────────┐                    │
+//   │  │ .Result          │ ← waiting for Task │
+//   │  │ (BLOCKED)        │                    │
+//   │  └────────┬─────────┘                    │
+//   │           │ needs UI thread to resume    │
+//   │  ┌────────▼─────────┐                    │
+//   │  │ Task continuation│ ← waiting for UI   │
+//   │  │ (QUEUED)         │   thread            │
+//   │  └──────────────────┘                    │
+//   │           DEADLOCK!                      │
+//   └──────────────────────────────────────────┘
+//
+//   FIX 1: Use await instead of .Result
+//   FIX 2: Use ConfigureAwait(false) in the async method
 
-Console.WriteLine("  await = 'pause here, free the thread, resume when ready'");
-Console.WriteLine("  It does NOT create a new thread!");
-Console.WriteLine("  It does NOT spin-wait or poll!");
-Console.WriteLine("  It's compiler magic — a state machine.\n");
+Console.WriteLine("  Deadlock = UI thread blocked by .Result + SyncContext wants UI thread");
+Console.WriteLine("  Fix: ALWAYS use await, NEVER use .Result or .Wait() in UI code");
+Console.WriteLine("  This is the #1 async bug in plugin/UI development.\n");
 
-
-// ============================================
-// PART 7: Common Mistakes
-// ============================================
-Console.WriteLine("=== PART 7: Common Mistakes to Avoid ===\n");
-
-// MISTAKE 1: Using .Result or .Wait() — DEADLOCK RISK!
-// BAD:  string name = FetchUserNameAsync(1).Result;  // Can deadlock!
-// GOOD: string name = await FetchUserNameAsync(1);
-Console.WriteLine("  Mistake 1: Never use .Result or .Wait() — use await instead");
-
-// MISTAKE 2: async void (except event handlers)
-// BAD:  async void HandleClick() { ... }  // Exceptions vanish!
-// GOOD: async Task HandleClickAsync() { ... }
-Console.WriteLine("  Mistake 2: Never use async void (except UI event handlers)");
-
-// MISTAKE 3: Not passing CancellationToken
-// Your plugin WILL need to cancel work. Always accept and pass tokens.
-Console.WriteLine("  Mistake 3: Always accept and pass CancellationToken");
-
-// MISTAKE 4: Thread.Sleep in async code
-// BAD:  Thread.Sleep(1000);   // BLOCKS the thread!
-// GOOD: await Task.Delay(1000); // Frees the thread!
-Console.WriteLine("  Mistake 4: Use Task.Delay, not Thread.Sleep in async code");
-
-// MISTAKE 5: Forgetting to await
-// BAD:  DoSomethingAsync();       // Fire and forget — exceptions lost!
-// GOOD: await DoSomethingAsync(); // Properly awaited
-Console.WriteLine("  Mistake 5: Always await your async calls\n");
-
-
-// ============================================
-// PRACTICE EXERCISES
-// ============================================
-Console.WriteLine("=== PRACTICE TIME ===\n");
-Console.WriteLine("Try these exercises (uncomment one at a time):\n");
-
-// EXERCISE 1: Parallel Web Fetcher
-//Create 3 async methods that simulate fetching data from different APIs
-async Task<Dictionary<string, string>> StudentRankAsync()
+// Safe alternative demo:
+async Task<string> SafeGetDataAsync()
 {
-    await Task.Delay(100); // Simulate fetching student rank from school API
-    return new Dictionary<string, string> { ["rank"] = "1st", ["name"] = "Santhosh" };
-}
-async Task<Dictionary<string, string>> WeatherAsync()
-{
-    await Task.Delay(500); // Simulate fetching weather data
-
-    return new Dictionary<string, string> { ["temp"] = "30°C", ["condition"] = "Sunny" };
-}       
-async Task<Dictionary<string, string>> NewsAsync()
-{
-    await Task.Delay(200); // Simulate fetching news headlines
-    return new Dictionary<string, string> { ["headline"] = "C# Async/Await Mastered!", ["source"] = "Tech News" };
+    await Task.Delay(100);
+    return "data fetched safely!";
 }
 
-// (weather, news, stocks). Each takes a different time.
-// Fetch all 3 in parallel and print results.
-async Task FetchAllDataAsync()
+// GOOD — non-blocking
+string safeResult = await SafeGetDataAsync();
+Console.WriteLine($"  Safe result: {safeResult}\n");
+
+
+// ============================================
+// PART 7: See It in ILDASM (Try This Yourself)
+// ============================================
+Console.WriteLine("=== PART 7: Verify with ILDASM ===\n");
+
+Console.WriteLine("  To see the ACTUAL state machine the compiler generates:");
+Console.WriteLine("  1. Build:    dotnet build");
+Console.WriteLine("  2. Find DLL: ls bin/Debug/net10.0/Basics.dll");
+Console.WriteLine("  3. Decompile with ILSpy or dotPeek, OR:");
+Console.WriteLine("     dotnet tool install --global dotnet-ildasm");
+Console.WriteLine("     dotnet ildasm bin/Debug/net10.0/Basics.dll");
+Console.WriteLine();
+Console.WriteLine("  You'll see classes like:");
+Console.WriteLine("    <<Main>$>d__0     ← top-level state machine");
+Console.WriteLine("    Fields: int <>1__state, TaskAwaiter <>u__1");
+Console.WriteLine("    Method: MoveNext() ← the switch statement\n");
+
+Console.WriteLine("  This proves async/await is pure COMPILER MAGIC — not runtime magic.");
+Console.WriteLine("  The CLR sees normal classes and method calls. No special 'async' instruction exists in IL.\n");
+
+
+// === Class must be declared after top-level statements ===
+class CustomSyncContext : SynchronizationContext
 {
-    var studentTask = StudentRankAsync();
-    var weatherTask = WeatherAsync();
-    var newsTask = NewsAsync();
+    private readonly int _targetThreadId;
 
-    await Task.WhenAll(studentTask, weatherTask, newsTask);
-
-    Console.WriteLine($"Student: {studentTask.Result["name"]} is ranked {studentTask.Result["rank"]}");
-    Console.WriteLine($"Weather: {weatherTask.Result["temp"]}, {weatherTask.Result["condition"]}");
-    Console.WriteLine($"News: \"{newsTask.Result["headline"]}\" from {newsTask.Result["source"]}");
-}
-await FetchAllDataAsync();
-// Target: total time should be max(individual times), not sum.
-
-// EXERCISE 2: Retry Pattern
-// Write an async method that simulates a flaky API (fails 2 out of 3 times).
-// Write a RetryAsync wrapper that retries up to 3 times with increasing delay
-// (100ms, 200ms, 400ms — exponential backoff).
-
-Random random = new Random();
-async Task<string> FlakyApiAsync()
-{
-    await Task.Delay(100); // Simulate API call
-    if (random.Next(3) < 2) // 66% chance to fail (0 or 1 out of 0,1,2)
-        throw new Exception("Flaky API failed!");
-    return "Success!";
-}   
-async Task<string> RetryAsync(Func<Task<string>> operation, int maxRetries)
-{
-    int delay = 100;
-    for (int attempt = 1; attempt <= maxRetries; attempt++)
+    public CustomSyncContext(int targetThreadId)
     {
-        try
-        {
-            return await operation();
-        }
-        catch
-        {
-            if (attempt == maxRetries)
-                throw; // Rethrow if it's the last attempt
-            Console.WriteLine($"Attempt {attempt} failed. Retrying in {delay}ms...");
-            await Task.Delay(delay);
-            delay *= 2; // Exponential backoff
-        }
+        _targetThreadId = targetThreadId;
     }
-    return null!; // Unreachable, but required for compilation
-}
-try
-{
-    string result = await RetryAsync(FlakyApiAsync, 3);
-    Console.WriteLine($"Final result: {result}");
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"All retries failed: {ex.Message}");
-}
 
-// EXERCISE 3: Plugin Event Listener
-// Simulate a plugin that:
-// - Listens for "device events" in a loop (use Task.Delay to simulate)
-// - Processes each event asynchronously
-// - Supports CancellationToken to stop listening
-// - Logs "Listening...", "Event received: dial_turn", "Processing...", etc.
-// Cancel after 2 seconds.
-
-async Task deviceEventListenerAsync(CancellationToken cancellationToken)
-{
-    int eventCount = 0;
-    while (!cancellationToken.IsCancellationRequested)
+    public override void Post(SendOrPostCallback callback, object? state)
     {
-        Console.WriteLine("Listening for device events...");
-        await Task.Delay(500, cancellationToken); // Simulate waiting for an event
-
-        // Simulate receiving an event
-        string deviceEvent = $"dial_turn_{++eventCount}";
-        Console.WriteLine($"Event received: {deviceEvent}");
-
-        // Process the event asynchronously
-        await Task.Delay(300, cancellationToken); // Simulate processing time
-        Console.WriteLine($"Processed event: {deviceEvent}\n");
+        Console.WriteLine($"    [SyncContext] Post called — wants Thread {_targetThreadId}, currently on Thread {Environment.CurrentManagedThreadId}");
+        ThreadPool.QueueUserWorkItem(_ => callback(state));
     }
-    Console.WriteLine("Stopped listening for device events.");
 }
-using var cts2 = new CancellationTokenSource();
-cts2.CancelAfter(2000); // Stop after 2 seconds
-try
-{
-    await deviceEventListenerAsync(cts2.Token);
-}
-catch (OperationCanceledException)
-{
-    Console.WriteLine("Event listener cancelled gracefully.");      
-}
-
-Console.WriteLine("Exercises are described in the comments above.");
-Console.WriteLine("Pick one and implement it below!");
-
-
